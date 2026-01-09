@@ -8,9 +8,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Query is required' }, { status: 400 });
     }
 
-    // Firecrawl search usage disabled. Returning empty/mock search results.
-    console.log('[search] Returning mock empty search results (Firecrawl OFF)');
-    return NextResponse.json({ results: [] });
+    // Use Firecrawl search to get top 10 results with screenshots
+    const searchResponse = await fetch('https://api.firecrawl.dev/v1/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.FIRECRAWL_API_KEY}`,
+      },
+      body: JSON.stringify({
+        query,
+        limit: 10,
+        scrapeOptions: {
+          formats: ['markdown', 'screenshot'],
+          onlyMainContent: true,
+        },
+      }),
+    });
+
+    if (!searchResponse.ok) {
+      throw new Error('Search failed');
+    }
+
+    const searchData = await searchResponse.json();
+    
+    // Format results with screenshots and markdown
+    const results = searchData.data?.map((result: any) => ({
+      url: result.url,
+      title: result.title || result.url,
+      description: result.description || '',
+      screenshot: result.screenshot || null,
+      markdown: result.markdown || '',
+    })) || [];
+
+    return NextResponse.json({ results });
   } catch (error) {
     console.error('Search error:', error);
     return NextResponse.json(

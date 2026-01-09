@@ -27,39 +27,94 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Firecrawl API usage disabled by user request. Returning mock enhanced content.
-    console.log('[scrape-url-enhanced] Returning mock response (Firecrawl OFF)');
-    const mockTitle = "Enhanced Example Website";
-    const mockDescription = "A sample website with enhanced mock scraping results.";
-    const mockMarkdown = `# ${mockTitle}\n\nThis is enhanced mock content because Firecrawl is OFF.`;
+    console.log('[scrape-url-enhanced] Scraping with Firecrawl:', url);
+    
+    const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
+    if (!FIRECRAWL_API_KEY) {
+      throw new Error('FIRECRAWL_API_KEY environment variable is not set');
+    }
+    
+    // Make request to Firecrawl API with maxAge for 500% faster scraping
+    const firecrawlResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        url,
+        formats: ['markdown', 'html', 'screenshot'],
+        waitFor: 3000,
+        timeout: 30000,
+        blockAds: true,
+        maxAge: 3600000, // Use cached data if less than 1 hour old (500% faster!)
+        actions: [
+          {
+            type: 'wait',
+            milliseconds: 2000
+          },
+          {
+            type: 'screenshot',
+            fullPage: false // Just visible viewport for performance
+          }
+        ]
+      })
+    });
+    
+    if (!firecrawlResponse.ok) {
+      const error = await firecrawlResponse.text();
+      throw new Error(`Firecrawl API error: ${error}`);
+    }
+    
+    const data = await firecrawlResponse.json();
+    
+    if (!data.success || !data.data) {
+      throw new Error('Failed to scrape content');
+    }
+    
+    const { markdown, metadata, screenshot, actions } = data.data;
+    // html available but not used in current implementation
+    
+    // Get screenshot from either direct field or actions result
+    const screenshotUrl = screenshot || actions?.screenshots?.[0] || null;
+    
+    // Sanitize the markdown content
+    const sanitizedMarkdown = sanitizeQuotes(markdown || '');
+    
+    // Extract structured data from the response
+    const title = metadata?.title || '';
+    const description = metadata?.description || '';
+    
+    // Format content for AI
     const formattedContent = `
-Title: ${mockTitle}
-Description: ${mockDescription}
+Title: ${sanitizeQuotes(title)}
+Description: ${sanitizeQuotes(description)}
 URL: ${url}
 
 Main Content:
-${mockMarkdown}
+${sanitizedMarkdown}
     `.trim();
-
+    
     return NextResponse.json({
       success: true,
       url,
       content: formattedContent,
-      screenshot: null,
+      screenshot: screenshotUrl,
       structured: {
-        title: mockTitle,
-        description: mockDescription,
-        content: mockMarkdown,
+        title: sanitizeQuotes(title),
+        description: sanitizeQuotes(description),
+        content: sanitizedMarkdown,
         url,
-        screenshot: null
+        screenshot: screenshotUrl
       },
       metadata: {
-        scraper: 'mock-enhanced',
+        scraper: 'firecrawl-enhanced',
         timestamp: new Date().toISOString(),
         contentLength: formattedContent.length,
-        cached: false
+        cached: data.data.cached || false, // Indicates if data came from cache
+        ...metadata
       },
-      message: 'URL scraped successfully with mock provider (Firecrawl OFF)'
+      message: 'URL scraped successfully with Firecrawl (with caching for 500% faster performance)'
     });
     
   } catch (error) {

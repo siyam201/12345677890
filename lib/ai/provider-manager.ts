@@ -3,17 +3,15 @@ import { createGroq } from '@ai-sdk/groq';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createNovemixs } from './novemixs';
 
-type ProviderName = 'openai' | 'anthropic' | 'groq' | 'google' | 'novemixs';
+type ProviderName = 'openai' | 'anthropic' | 'groq' | 'google';
 
-// Client function type returned by @ai-sdk providers or custom ones
+// Client function type returned by @ai-sdk providers
 export type ProviderClient =
   | ReturnType<typeof createOpenAI>
   | ReturnType<typeof createAnthropic>
   | ReturnType<typeof createGroq>
-  | ReturnType<typeof createGoogleGenerativeAI>
-  | ReturnType<typeof createNovemixs>;
+  | ReturnType<typeof createGoogleGenerativeAI>;
 
 export interface ProviderResolution {
   client: ProviderClient;
@@ -36,16 +34,12 @@ function getEnvDefaults(provider: ProviderName): { apiKey?: string; baseURL?: st
     case 'openai':
       return { apiKey: process.env.OPENAI_API_KEY, baseURL: process.env.OPENAI_BASE_URL };
     case 'anthropic':
+      // Default Anthropic base URL mirrors existing routes
       return { apiKey: process.env.ANTHROPIC_API_KEY, baseURL: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1' };
     case 'groq':
       return { apiKey: process.env.GROQ_API_KEY, baseURL: process.env.GROQ_BASE_URL };
     case 'google':
       return { apiKey: process.env.GEMINI_API_KEY, baseURL: process.env.GEMINI_BASE_URL };
-    case 'novemixs':
-      return { 
-        apiKey: process.env.NOVEMIXS_API_KEY, 
-        baseURL: process.env.NOVEMIXS_API_URL || 'https://api-shield--ahmjahangiralam.replit.app/api/ai' 
-      };
     default:
       return {};
   }
@@ -73,12 +67,6 @@ function getOrCreateClient(provider: ProviderName, apiKey?: string, baseURL?: st
       break;
     case 'google':
       client = createGoogleGenerativeAI({ apiKey: effective.apiKey || getEnvDefaults('google').apiKey, baseURL: effective.baseURL ?? getEnvDefaults('google').baseURL });
-      break;
-    case 'novemixs':
-      client = createNovemixs({ 
-        apiKey: (effective.apiKey || getEnvDefaults('novemixs').apiKey) as string, 
-        baseURL: (effective.baseURL || getEnvDefaults('novemixs').baseURL) as string 
-      });
       break;
     default:
       client = createGroq({ apiKey: effective.apiKey || getEnvDefaults('groq').apiKey, baseURL: effective.baseURL ?? getEnvDefaults('groq').baseURL });
@@ -123,14 +111,9 @@ export function getProviderForModel(modelId: string): ProviderResolution {
     return { client, actualModel: modelId.replace('google/', '') };
   }
 
-  // Default: use Novemixs if key is present, otherwise Anthropic
-  if (process.env.NOVEMIXS_API_KEY) {
-    const client = getOrCreateClient('novemixs');
-    return { client, actualModel: 'gpt-4o' };
-  }
-
-  const client = getOrCreateClient('anthropic');
-  return { client, actualModel: 'claude-3-5-sonnet-20241022' };
+  // Default: use Groq with modelId as-is
+  const client = getOrCreateClient('groq');
+  return { client, actualModel: modelId };
 }
 
 export default getProviderForModel;
